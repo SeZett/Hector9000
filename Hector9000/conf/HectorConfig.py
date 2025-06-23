@@ -23,33 +23,12 @@ config = {
             (375, 240),  # ch 9
             (375, 235),  # ch 10
             (375, 250)  # ch 11
-        ],
-        "fingerchannel": 12,
-        "fingerpositions": (280, 430, 450),  # retracted, above bell, bell
-        "lightpin": 22,
-        "lightpwmchannel": 13,
-        "lightpositions": (0, 500)
-    },
-    "a4988": {
-        "ENABLE": 11,
-        "MS1": 13,
-        "MS2": 15,
-        "MS3": 19,
-        "RESET": 21,
-        "SLEEP": 23,
-        "STEP": 37,
-        "DIR": 33,
-        "numSteps": 261  # number of steps between IN and OUT positions
-    },
-    "arm": {
-        "SENSE": 16
-    },
+        ]    },
     "pump": {
         "MOTOR": 18
     },
-    "ws2812": {
-        # D18
-        "DIN": 12
+    "servo": {
+        "POWER": 16
     },
     "mqtt": {
         "SERVER": "localhost",
