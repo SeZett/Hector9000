@@ -69,15 +69,15 @@ class HectorSimulator(api.HectorAPI):
     def getConfig(self):
         return self.config
 
-    def light_on(self):
+    #def light_on(self):
         print("turn on light")
         return 1
 
-    def light_off(self):
+    #def light_off(self):
         print("turn off light")
         return 0
 
-    def arm_out(self, cback=debugOut):
+    #def arm_out(self, cback=debugOut):
         armMaxSteps = int(self.armNumSteps * 1.1)
         print("move arm out")
         for i in range(armMaxSteps):
@@ -92,7 +92,7 @@ class HectorSimulator(api.HectorAPI):
                 cback("arm_out", i * 100 / self.armNumSteps)
         print("arm is in OUT position (with timeout)")
 
-    def arm_in(self, cback=debugOut):
+    #def arm_in(self, cback=debugOut):
         self.arm_out(cback)
         print("move arm in")
         for i in range(self.armNumSteps, 0, -1):
@@ -102,7 +102,7 @@ class HectorSimulator(api.HectorAPI):
                 cback("arm_in", i * 100 / self.armNumSteps)
         print("arm is in IN position")
 
-    def arm_isInOutPos(self):
+    #def arm_isInOutPos(self):
         pos = (self.simulatedArmPos >= self.armNumSteps)
         # print("arm_isInOutPos: %d" % pos)
         pos = (pos != 0)
