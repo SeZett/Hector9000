@@ -35,5 +35,7 @@ class HardwareTopics:
     cleanMe = "cleanMe"
     dryMe = "dryMe"
     reset = "reset"
+    weight = "weight"
+
 
 

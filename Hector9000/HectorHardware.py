@@ -2,59 +2,58 @@
 # -*- coding: utf8 -*-
 ##
 #   HectorHardware.py       API class for Hector9000 hardware
-#
+##
 
-
-# imports
 from __future__ import division
-
-from time import sleep, time
+import time
 import sys
+import threading
+import logging
 
 from Hector9000.utils import HectorAPI as api
 from Hector9000.conf import HectorConfig
-
-# hardware modules
 import Adafruit_PCA9685
 import RPi.GPIO as GPIO
 from Hector9000.conf.hx711 import HX711
 
-# settings
-
-# Uncomment to enable debug output:
-import logging
-
-# initialization
+# ====================================
+# Logging
+# ====================================
 logging.basicConfig(level=logging.CRITICAL)
-
 VERBOSE_LEVEL = 0
 
 
 def log(message):
     if VERBOSE_LEVEL == 0:
-        logging.log(VERBOSE_LEVEL, "" + str(message))
+        logging.log(VERBOSE_LEVEL, str(message))
 
 
 def error(message):
     if VERBOSE_LEVEL < 3:
-        print("Hardware ERROR: " + str(message))
+        print(f"Hardware ERROR: {message}")
 
 
 def warning(message):
     if VERBOSE_LEVEL < 2:
-        print("Hardware WARNING: " + str(message))
+        print(f"Hardware WARNING: {message}")
 
 
+# ====================================
+# Klasse HectorHardware
+# ====================================
 class HectorHardware(api.HectorAPI):
 
-    def __init__(self, cfg):
-
+    def __init__(self, cfg, mqtt_client=None):
+        print("[INIT] HectorHardware wird initialisiert...")
         log("initialization HectorHardware")
 
         self.config = cfg
+        self.mqtt_client = mqtt_client
         GPIO.setmode(GPIO.BOARD)
 
-        # setup scale (HX711)
+        # ----------------------------
+        # HX711 (Waage)
+        # ----------------------------
         hx1 = cfg["hx711"]["CLK"]
         hx2 = cfg["hx711"]["DAT"]
         hxref = cfg["hx711"]["ref"]
@@ -63,44 +62,33 @@ class HectorHardware(api.HectorAPI):
         self.hx.set_reference_unit(hxref)
         self.hx.reset()
         self.hx.tare()
+        log("HX711 Waage initialisiert und tariert.")
 
-        # setup servos (PCA9685)
+        # Starte Waage-Thread
+        self._weight_thread_running = True
+        self._weight_thread = threading.Thread(target=self._weight_loop, daemon=True)
+        self._weight_thread.start()
+
+        # ----------------------------
+        # PCA9685 (Servosteuerung)
+        # ----------------------------
         self.valveChannels = self.config["pca9685"]["valvechannels"]
         self.numValves = len(self.valveChannels)
         self.valvePositions = cfg["pca9685"]["valvepositions"]
-      #  self.fingerChannel = cfg["pca9685"]["fingerchannel"]
-       # self.fingerPositions = cfg["pca9685"]["fingerpositions"]
-       # self.lightPin = cfg["pca9685"]["lightpin"]
-       # self.lightChannel = cfg["pca9685"]["lightpwmchannel"]
-       # self.lightPositions = cfg["pca9685"]["lightpositions"]
         pcafreq = cfg["pca9685"]["freq"]
+
         self.pca = Adafruit_PCA9685.PCA9685()
         self.pca.set_pwm_freq(pcafreq)
 
-        # setup arm stepper (A4988)
-        #self.armEnable = cfg["a4988"]["ENABLE"]
-        #self.armReset = cfg["a4988"]["RESET"]
-        #self.armSleep = cfg["a4988"]["SLEEP"]
-        #self.armStep = cfg["a4988"]["STEP"]
-        #self.armDir = cfg["a4988"]["DIR"]
-        #self.armNumSteps = cfg["a4988"]["numSteps"]
-        #self.arm = cfg["arm"]["SENSE"]
-        #GPIO.setup(self.armEnable, GPIO.OUT)
-        #GPIO.output(self.armEnable, True)
-        #GPIO.setup(self.armReset, GPIO.OUT)
-        #GPIO.output(self.armReset, True)
-        #GPIO.setup(self.armSleep, GPIO.OUT)
-        #GPIO.output(self.armSleep, True)
-        #GPIO.setup(self.armStep, GPIO.OUT)
-        #GPIO.setup(self.armDir, GPIO.OUT)
-        #GPIO.setup(self.arm, GPIO.IN)
-        #GPIO.setup(self.lightPin, GPIO.OUT)
-
-        # setup air pump (GPIO)
+        # ----------------------------
+        # Relais / Pumpe
+        # ----------------------------
         self.pump = cfg["pump"]["MOTOR"]
-        # pump off; will be turned on with GPIO.OUT (?!?)
         GPIO.setup(self.pump, GPIO.IN)
 
+    # --------------------------------
+    # Grundfunktionen
+    # --------------------------------
     def getConfig(self):
         return self.config
 
@@ -119,11 +107,10 @@ class HectorHardware(api.HectorAPI):
     def arm_isInOutPos(self):
         pass
 
-    def scale_readout(self) -> object:
-        """
-
-        :rtype: object
-        """
+    # --------------------------------
+    # Waage
+    # --------------------------------
+    def scale_readout(self):
         weight = self.hx.get_weight(5)
         return weight
 
@@ -131,6 +118,9 @@ class HectorHardware(api.HectorAPI):
         log("scale tare")
         self.hx.tare()
 
+    # --------------------------------
+    # Pumpe
+    # --------------------------------
     def pump_start(self):
         log("start pump")
         GPIO.setup(self.pump, GPIO.OUT)
@@ -139,57 +129,55 @@ class HectorHardware(api.HectorAPI):
         log("stop pump")
         GPIO.setup(self.pump, GPIO.IN)
 
+    # --------------------------------
+    # Ventile
+    # --------------------------------
     def valve_open(self, index, open=1):
         if open == 0:
             log("close valve")
         else:
             log("open valve")
-        if (index < 0 and index >= len(self.valveChannels) - 1):
+
+        if index < 0 or index >= len(self.valveChannels):
             return
-        if open == 0:
-            log("close valve no. %d" % index)
-        else:
-            log("open valve no. %d" % index)
+
         ch = self.valveChannels[index]
         pos = self.valvePositions[index][1 - open]
-        log("ch %d, pos %d" % (ch, pos))
+        log(f"ch {ch}, pos {pos}")
         self.pca.set_pwm(ch, 0, pos)
 
     def valve_close(self, index):
         log("close valve")
         self.valve_open(index, open=0)
 
-    def valve_dose(
-            self,
-            index,
-            amount,
-            timeout=30,
-            cback=None,
-            progress=(
-                0,
-                100),
-            topic=""):
-        log("dose channel %d, amount %d" % (index, amount))
-        if index < 0 and index >= len(self.valveChannels) - 1:
+    # --------------------------------
+    # Dosieren
+    # --------------------------------
+    def valve_dose(self, index, amount, timeout=30, cback=None, progress=(0, 100), topic=""):
+        log(f"dose channel {index}, amount {amount}")
+        if index < 0 or index >= len(self.valveChannels):
             return -1
         if not self.arm_isInOutPos():
             return -1
-        t0 = time()
+
+        t0 = time.time()
         balance = True
         self.scale_tare()
         self.pump_start()
         self.valve_open(index)
-        sr: float = self.scale_readout()
+
+        sr = float(self.scale_readout())
         if sr < -10:
-            amount = amount + sr
+            amount += sr
             balance = False
+
         last_over = False
-        last: float = sr
+        last = sr
         while True:
-            sr = self.scale_readout()
+            sr = float(self.scale_readout())
             if balance and sr < -10:
                 warning("weight abnormality: scale balanced")
-                amount = amount + sr
+                amount += sr
                 balance = False
             if sr > amount:
                 if last_over:
@@ -199,19 +187,22 @@ class HectorHardware(api.HectorAPI):
                     last_over = True
             else:
                 last_over = False
-            log("Read scale: %d" % sr)
+            log(f"Read scale: {sr}")
+
             if (sr - last) > 5:
                 log("reset timeout")
-                t0 = time()
+                t0 = time.time()
                 last = sr
-            if (time() - t0) > timeout:
+            if (time.time() - t0) > timeout:
                 error("timeout reached")
                 self.pump_stop()
                 self.valve_close(index)
                 if cback:
                     cback(progress[0] + progress[1])
                 return False
-            sleep(0.1)
+
+            time.sleep(0.1)
+
         self.pump_stop()
         self.valve_close(index)
         if cback:
@@ -219,6 +210,9 @@ class HectorHardware(api.HectorAPI):
         log("completed reset after dosing")
         return True
 
+    # --------------------------------
+    # Sonstige
+    # --------------------------------
     def finger(self, pos=0):
         pass
 
@@ -231,16 +225,36 @@ class HectorHardware(api.HectorAPI):
         log("Bye!")
         sys.exit()
 
-    # Helper function to make setting a servo pulse width simpler.
+    # --------------------------------
+    # Hilfsfunktion: Servo-Puls
+    # --------------------------------
     def set_servo_pulse(self, channel, pulse):
-        pulse_length = 1000000  # 1,000,000 us per second
-        pulse_length //= 60  # 60 Hz
-        log('{0} µs per period'.format(pulse_length))
-        pulse_length //= 4096  # 12 bits of resolution
-        log('{0} µs per bit'.format(pulse_length))
+        pulse_length = 1000000
+        pulse_length //= 60
+        log(f'{pulse_length} µs per period')
+        pulse_length //= 4096
+        log(f'{pulse_length} µs per bit')
         pulse *= 1000
         pulse //= pulse_length
         self.pca.set_pwm(channel, 0, pulse)
 
+    # --------------------------------
+    # HX711-Thread
+    # --------------------------------
+    def _weight_loop(self):
+        """Kontinuierliche Messung der Waage und Publikation über MQTT"""
+        topic = "Hector9000/Hardware/weight"
+        while self._weight_thread_running:
+            try:
+                gewicht = float(self.hx.get_weight(5))
+                if self.mqtt_client:
+                    self.mqtt_client.publish(topic, str(gewicht))
+                    print(f"[HX711-Thread] Gewicht publiziert: {gewicht:.2f} g")
+            except Exception as e:
+                warning(f"[HX711-Thread] Fehler: {e}")
+            time.sleep(1)
 
-# end class HectorHardware
+    def stop_weight_thread(self):
+        """Stoppt den Waage-Thread"""
+        self._weight_thread_running = False
+        self._weight_thread.join()

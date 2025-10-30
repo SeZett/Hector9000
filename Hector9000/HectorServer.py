@@ -4,7 +4,7 @@
 #   HectorServer.py       Hector server with MQTT interface
 #
 
-
+import threading
 import time
 import re
 import traceback
@@ -212,7 +212,9 @@ def on_message(client, userdata, msg):
         do_pump_stop()
     elif topic == mqttTopics.HardwareTopics.pump_start:
         do_pump_start()
-    elif topic == mqttTopics.HardwareTopics.all_valve_open:
+    elif topic == mqttTopics.HardwareTopics.weight:
+        pass
+# end class HectorHardware.HardwareTopics.all_valve_open:
         do_all_valve_open()
     elif topic == mqttTopics.HardwareTopics.all_valve_close:
         do_all_valve_close()
@@ -273,14 +275,18 @@ def on_subscribe(client, userdata, mid, granted_qos):
 
 
 def main():
-    do_reset()
+    #do_reset()
+    print("HectorServer wird initialisiert...")
     log("starting")
     client = mqtt.Client(client_id="HectorServer")
+    hector = Hector(co, mqtt_client=client)
     client.on_message = on_message
     client.on_connect = on_connect
     client.on_subscribe = on_subscribe
     client.connect(MQTTIP, MQTTPORT, 60)
     log("started")
+    do_reset()
+
     while True:
         client.loop()
 
